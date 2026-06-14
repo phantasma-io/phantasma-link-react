@@ -6,7 +6,7 @@ export interface IConnectWallet {
 	address: string,
 }
 
-const STORAGE_KEY = "pha-connect-react"
+const STORAGE_KEY = "pha-link-react"
 
 export type LinkTransportMode = "auto" | "injected" | "local-socket"
 type LinkTransport = Exclude<LinkTransportMode, "auto">

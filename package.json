@@ -1,7 +1,17 @@
 {
-  "name": "@phantasma/connect-react",
+  "name": "@phantasma/link-react",
   "version": "0.1.4",
   "private": false,
+  "description": "React bindings and UI for the Phantasma Link dApp-wallet protocol (v5).",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/phantasma-io/phantasma-link-react.git"
+  },
+  "homepage": "https://github.com/phantasma-io/phantasma-link-react#readme",
+  "bugs": {
+    "url": "https://github.com/phantasma-io/phantasma-link-react/issues"
+  },
   "scripts": {
     "build": "tsc && resolve-tspaths"
   },

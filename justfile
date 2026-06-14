@@ -3,7 +3,7 @@ just:
     just -l
 
 install:
-    npm intall
+    npm install
 
 build:
     rm -rf ./dist
