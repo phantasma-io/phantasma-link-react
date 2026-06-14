@@ -8,14 +8,18 @@ import {
 	PhantasmaLink5,
 	LinkEvent,
 	bytesToBase64,
+	base64ToBytes,
 	utf8ToBytes,
+	buildSignMessagePayload,
 	type DappMetadata,
 	type LinkAccountV5,
 	type WalletCapabilities,
 	type WalletInfo,
+	type SignMessageResult,
 	type SendTransactionParams,
 	type InvokeScriptParams,
 } from "phantasma-sdk-ts/link/v5";
+import { verifyData, bytesToHex } from "phantasma-sdk-ts/public";
 
 /** Which v5 transport the store drives.
  * - `loopback`: same-machine desktop flow (a plaintext WebSocket to the wallet's local server,
@@ -281,8 +285,15 @@ export class PhantasmaLinkStore {
 	signMessage(message: string) {
 		return this.run(
 			"signMessage",
-			() => this.client!.signMessage({ message: bytesToBase64(utf8ToBytes(message)), display: message }),
-			(r) => `signature ${r.signature.slice(0, 28)}...`,
+			async () => {
+				const result = await this.client!.signMessage({
+					message: bytesToBase64(utf8ToBytes(message)),
+					display: message,
+				});
+				const verified = verifyV5Signature(message, result, this.account?.address);
+				return { signature: result.signature, verified };
+			},
+			(r) => `verified ${r.verified === null ? "n/a" : r.verified ? "VALID" : "INVALID"} | ${r.signature.slice(0, 16)}...`,
 		);
 	}
 
@@ -323,6 +334,27 @@ export class PhantasmaLinkStore {
 
 	dispose(): void {
 		this.teardownClient();
+	}
+}
+
+/** Verify a v5 signMessage result against the signer's address; null if it cannot be checked.
+ * The wallet signs DOMAIN_TAG || random || message (spec §8); verifyData wants the Phantasma
+ * signature envelope `01<len><sig-hex>`. */
+function verifyV5Signature(
+	message: string,
+	result: SignMessageResult,
+	address?: string,
+): boolean | null {
+	if (!address) {
+		return null;
+	}
+	try {
+		const payload = buildSignMessagePayload(utf8ToBytes(message), base64ToBytes(result.random));
+		const sig = base64ToBytes(result.signature);
+		const phaSig = "01" + sig.length.toString(16).padStart(2, "0") + bytesToHex(sig);
+		return verifyData(bytesToHex(payload), phaSig, address);
+	} catch {
+		return null;
 	}
 }
 
