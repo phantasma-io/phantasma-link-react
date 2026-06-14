@@ -55,18 +55,21 @@ export class PhantasmaLinkStore {
 	relayUrl?: string;
 	host?: string;
 
-	client?: PhantasmaLink5;
+	// All observable fields carry an explicit initializer: under the package's ES2017 target
+	// (no useDefineForClassFields) an uninitialized `field?: T` is not emitted as an own property,
+	// so makeAutoObservable would never see it and assignments to it would not be reactive.
+	client: PhantasmaLink5 | undefined = undefined;
 	status: LinkStatus = "idle";
-	account?: LinkAccountV5;
-	capabilities?: WalletCapabilities;
-	walletInfo?: WalletInfo;
-	pairingUri?: string;
-	error?: string;
+	account: LinkAccountV5 | undefined = undefined;
+	capabilities: WalletCapabilities | undefined = undefined;
+	walletInfo: WalletInfo | undefined = undefined;
+	pairingUri: string | undefined = undefined;
+	error: string | undefined = undefined;
 	/** Label of the operation currently in flight (for per-button spinners), if any. */
-	busyOp?: string;
+	busyOp: string | undefined = undefined;
 	logs: LinkLogEntry[] = [];
 
-	private unsubscribe?: () => void;
+	private unsubscribe: (() => void) | undefined = undefined;
 
 	constructor(config: PhantasmaLinkConfig) {
 		this.dapp = config.dapp;

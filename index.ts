@@ -21,6 +21,12 @@ export type { PairingModalProps } from "./components/PairingModal";
 
 export { str_cut, clip_copy } from "./lib/common_utils";
 
+// MobX re-exports so a consumer that builds its own observable stores / observer components
+// shares THIS package's single MobX instance. Important when the package is linked locally
+// (a `file:` dependency keeps its own node_modules, which would otherwise be a second copy).
+export { observer } from "mobx-react";
+export { makeAutoObservable, runInAction } from "mobx";
+
 // Re-export the slice of the v5 protocol surface consumers most often need next to the store.
 export {
 	LinkEvent,
