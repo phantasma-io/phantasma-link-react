@@ -6,7 +6,7 @@
 
 import { useState } from "react";
 import { observer } from "mobx-react";
-import { Wallet, LogOut, Copy } from "lucide-react";
+import { Wallet, LogOut, Copy, X } from "lucide-react";
 import { Button } from "./ui/button";
 import {
 	DropdownMenu,
@@ -49,26 +49,33 @@ export const ConnectWidget = observer(function ConnectWidget() {
 	}
 
 	const busy = store.status === "pairing" || store.status === "connecting";
+	const cancel = () => {
+		setShowPairing(false);
+		void store.cancel();
+	};
 	return (
 		<>
-			<Button
-				variant="outline"
-				className="gap-2"
-				disabled={!store.client}
-				onClick={() => {
-					void store.connect();
-					setShowPairing(true);
-				}}
-			>
-				<Wallet className="size-4" />
-				{busy ? "Connecting..." : "Connect wallet"}
-			</Button>
+			{busy ? (
+				<Button variant="outline" className="gap-2" onClick={cancel}>
+					<X className="size-4" />
+					Cancel
+				</Button>
+			) : (
+				<Button
+					variant="outline"
+					className="gap-2"
+					disabled={!store.client}
+					onClick={() => {
+						void store.connect();
+						setShowPairing(true);
+					}}
+				>
+					<Wallet className="size-4" />
+					Connect wallet
+				</Button>
+			)}
 			{showPairing && store.pairingUri ? (
-				<PairingModal
-					uri={store.pairingUri}
-					transport={store.transport}
-					onClose={() => setShowPairing(false)}
-				/>
+				<PairingModal uri={store.pairingUri} transport={store.transport} onClose={cancel} />
 			) : null}
 		</>
 	);

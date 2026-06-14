@@ -8,20 +8,26 @@ import {
 	PhantasmaLink5,
 	LinkEvent,
 	bytesToBase64,
+	base64ToBytes,
 	utf8ToBytes,
+	buildSignMessagePayload,
 	type DappMetadata,
 	type LinkAccountV5,
 	type WalletCapabilities,
 	type WalletInfo,
+	type SignMessageResult,
 	type SendTransactionParams,
 	type InvokeScriptParams,
 } from "phantasma-sdk-ts/link/v5";
+import { verifyData, bytesToHex } from "phantasma-sdk-ts/public";
 
 /** Which v5 transport the store drives.
+ * - `loopback`: same-machine desktop flow (a plaintext WebSocket to the wallet's local server,
+ *   localhost:7090/phantasma/v5). No pairing - connect() talks to the wallet directly.
  * - `deeplink`: same-device web flow (universal link opens the wallet on this device).
  * - `relay`: cross-device flow (the pairing URI is shown as a QR; the wallet scans it and
  *   the session arrives over the public relay). */
-export type LinkTransportKind = "deeplink" | "relay";
+export type LinkTransportKind = "loopback" | "deeplink" | "relay";
 
 export type LinkStatus = "idle" | "pairing" | "connecting" | "connected" | "error";
 
@@ -125,11 +131,10 @@ export class PhantasmaLinkStore {
 		try {
 			const client =
 				this.transport === "deeplink"
-					? await PhantasmaLink5.webDeeplink({
-							dapp: this.dapp,
-							host: this.host,
-						})
-					: PhantasmaLink5.relayEcdh({ dapp: this.dapp, url: this.relayUrl });
+					? await PhantasmaLink5.webDeeplink({ dapp: this.dapp, host: this.host })
+					: this.transport === "loopback"
+						? PhantasmaLink5.loopback()
+						: PhantasmaLink5.relayEcdh({ dapp: this.dapp, url: this.relayUrl });
 
 			const unsub = client.onEvent((event, data) => this.onLinkEvent(event, data));
 			runInAction(() => {
@@ -238,6 +243,13 @@ export class PhantasmaLinkStore {
 		}
 	}
 
+	/** Abort an in-progress pairing/connect and reset for a fresh attempt. Rebuilding the client
+	 * also mints a new pairing URI for the relay transport, so "try again" starts clean. */
+	async cancel(): Promise<void> {
+		this.log("info", "connect cancelled");
+		await this.buildClient();
+	}
+
 	async disconnect(): Promise<void> {
 		if (this.client) {
 			try {
@@ -273,8 +285,15 @@ export class PhantasmaLinkStore {
 	signMessage(message: string) {
 		return this.run(
 			"signMessage",
-			() => this.client!.signMessage({ message: bytesToBase64(utf8ToBytes(message)), display: message }),
-			(r) => `signature ${r.signature.slice(0, 24)}...`,
+			async () => {
+				const result = await this.client!.signMessage({
+					message: bytesToBase64(utf8ToBytes(message)),
+					display: message,
+				});
+				const verified = verifyV5Signature(message, result, this.account?.address);
+				return { signature: result.signature, verified };
+			},
+			(r) => `verified: ${r.verified === null ? "n/a" : r.verified ? "VALID" : "INVALID"} | ${r.signature.slice(0, 16)}...`,
 		);
 	}
 
@@ -315,6 +334,27 @@ export class PhantasmaLinkStore {
 
 	dispose(): void {
 		this.teardownClient();
+	}
+}
+
+/** Verify a v5 signMessage result against the signer's address; null if it cannot be checked.
+ * The wallet signs DOMAIN_TAG || random || message (spec §8); verifyData wants the Phantasma
+ * signature envelope `01<len><sig-hex>`. */
+function verifyV5Signature(
+	message: string,
+	result: SignMessageResult,
+	address?: string,
+): boolean | null {
+	if (!address) {
+		return null;
+	}
+	try {
+		const payload = buildSignMessagePayload(utf8ToBytes(message), base64ToBytes(result.random));
+		const sig = base64ToBytes(result.signature);
+		const phaSig = "01" + sig.length.toString(16).padStart(2, "0") + bytesToHex(sig);
+		return verifyData(bytesToHex(payload), phaSig, address);
+	} catch {
+		return null;
 	}
 }
 
