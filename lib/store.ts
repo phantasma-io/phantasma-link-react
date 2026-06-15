@@ -55,7 +55,7 @@ let logSeq = 0;
 const MAX_LOG = 200;
 
 /** localStorage key under which the store remembers the user's chosen transport across reloads.
- * The deeplink flow navigates to the wallet and back, reloading the page (spec §19, same-device
+ * The deeplink flow navigates to the wallet and back, reloading the page (spec §17, same-device
  * hop); without this the selector snaps back to the config default and shows "not connected"
  * until the user re-picks the transport, even though the session is still live. */
 const TRANSPORT_STORAGE_KEY = "phantasma.link.v5.transport";
