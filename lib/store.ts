@@ -204,12 +204,23 @@ export class PhantasmaLinkStore {
 			return;
 		}
 
-		if (this.transport === "relay") {
+		// Relay and first-time deeplink both establish the channel key out-of-band (relay: the
+		// wallet scans the QR; deeplink: the user opens the domain-verified universal pairing link
+		// on this device). The session then arrives as an unsolicited SessionEstablished event, so
+		// neither calls connect() here - a phantasma:// request sent before the wallet holds the key
+		// would be undecryptable and the wallet would surface nothing. Loopback, and a deeplink that
+		// already has a live session to resume, fall through to connect() below.
+		if (this.transport === "relay" || (this.transport === "deeplink" && !this.account)) {
 			runInAction(() => {
 				this.status = "pairing";
 				this.pairingUri = this.client?.pairingUri;
 			});
-			this.log("info", "Waiting for the wallet to scan the pairing QR");
+			this.log(
+				"info",
+				this.transport === "relay"
+					? "Waiting for the wallet to scan the pairing QR"
+					: "Open the wallet on this device to pair",
+			);
 			return;
 		}
 

@@ -1,6 +1,7 @@
-// The pairing surface: renders the v5 pairing URI as a QR (for a phone to scan) plus, on the
-// same-device deeplink path, a button that opens the wallet on this device. The URI carries the
-// channel key in its fragment, so it is only ever rendered locally - never sent anywhere.
+// The pairing surface, branched by transport: relay renders the v5 pairing URI as a QR for a
+// separate phone to scan; deeplink (same device) shows a button that opens the wallet on THIS
+// device - no QR, there is nothing to scan. The URI carries the channel key in its fragment, so
+// it is only ever rendered locally - never sent anywhere.
 
 "use client";
 
@@ -42,24 +43,30 @@ export function PairingModal({ uri, transport, onClose }: PairingModalProps) {
 				</div>
 
 				<div className="flex flex-col items-center gap-4">
-					<div className="rounded-xl bg-white p-3">
-						<QRCodeSVG value={uri} size={224} marginSize={1} level="M" />
-					</div>
-					<p className="text-center text-sm text-muted-foreground">
-						{transport === "relay"
-							? "Scan this code with the Poltergeist wallet on your phone, then approve the pairing."
-							: "Scan with your phone wallet, or open the wallet on this device."}
-					</p>
-					{transport === "deeplink" ? (
-						<Button
-							className="w-full"
-							onClick={() => {
-								window.location.href = uri;
-							}}
-						>
-							Open wallet on this device
-						</Button>
-					) : null}
+					{transport === "relay" ? (
+						<>
+							<div className="rounded-xl bg-white p-3">
+								<QRCodeSVG value={uri} size={224} marginSize={1} level="M" />
+							</div>
+							<p className="text-center text-sm text-muted-foreground">
+								Scan this code with the Poltergeist wallet on your phone, then approve the pairing.
+							</p>
+						</>
+					) : (
+						<>
+							<p className="text-center text-sm text-muted-foreground">
+								Open the Poltergeist wallet on this device and approve the pairing.
+							</p>
+							<Button
+								className="w-full"
+								onClick={() => {
+									window.location.href = uri;
+								}}
+							>
+								Open wallet on this device
+							</Button>
+						</>
+					)}
 					<Button variant="outline" className="w-full" onClick={() => clip_copy(uri)}>
 						Copy pairing link
 					</Button>

@@ -65,11 +65,11 @@ export const ConnectWidget = observer(function ConnectWidget() {
 					Connect wallet
 				</Button>
 			)}
-			{/* The pairing QR belongs to the relay transport only - it is the single transport that
-			    enters the "pairing" state (waiting for the wallet to scan). Loopback and deeplink
-			    connect directly via connect(), so they must never render the QR. Gating on the
-			    store's own status (not a local flag) keeps a stale URI from leaking a QR after a
-			    transport switch. */}
+			{/* The pairing surface (QR for relay, "open wallet on this device" link for deeplink)
+			    shows whenever the store is in the "pairing" state: relay always, deeplink until the
+			    first session is established. Loopback connects directly and never pairs. Gating on
+			    the store's own status (not a local flag) keeps a stale URI from leaking a modal
+			    after a transport switch. */}
 			{store.status === "pairing" && store.pairingUri ? (
 				<PairingModal
 					uri={store.pairingUri}
