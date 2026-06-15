@@ -24,11 +24,17 @@ export const ConnectWidget = observer(function ConnectWidget() {
 	if (store.connected && store.account) {
 		const address = store.account.address;
 		return (
-			<DropdownMenu>
+			// modal={false}: the default modal mode locks body scroll (react-remove-scroll sets
+			// overflow:hidden + pointer-events:none + data-scroll-locked on <body>), which reflows
+			// and visibly breaks the layout on mobile. A small account menu needs no scroll lock.
+			<DropdownMenu modal={false}>
 				<DropdownMenuTrigger asChild>
-					<Button variant="outline" className="gap-2 font-mono text-xs">
+					{/* Full address overflows a phone header, so cap the chip width and ellipsize on
+					    small screens (the full value stays one tap away via Copy address and the
+					    account panel); show it in full from sm: up. */}
+					<Button variant="outline" className="max-w-[60vw] gap-2 font-mono text-xs sm:max-w-none">
 						<Wallet className="size-4 shrink-0" />
-						{address}
+						<span className="truncate">{address}</span>
 					</Button>
 				</DropdownMenuTrigger>
 				<DropdownMenuContent align="end">
