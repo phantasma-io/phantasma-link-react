@@ -19,7 +19,8 @@ export { ConnectWidget } from "./components/ConnectWidget";
 export { PairingModal } from "./components/PairingModal";
 export type { PairingModalProps } from "./components/PairingModal";
 
-export { str_cut, clip_copy } from "./lib/common_utils";
+export { clip_copy, errMsg } from "./lib/common_utils";
+export { verifyV5Signature } from "./lib/verify";
 
 // MobX re-exports so a consumer that builds its own observable stores / observer components
 // shares THIS package's single MobX instance. Important when the package is linked locally

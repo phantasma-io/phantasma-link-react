@@ -4,7 +4,6 @@
 
 "use client";
 
-import { useState } from "react";
 import { observer } from "mobx-react";
 import { Wallet, LogOut, Copy, X } from "lucide-react";
 import { Button } from "./ui/button";
@@ -17,20 +16,19 @@ import {
 } from "./ui/dropdown-menu";
 import { usePhantasmaLink } from "../lib/provider";
 import { PairingModal } from "./PairingModal";
-import { clip_copy, str_cut } from "../lib/common_utils";
+import { clip_copy } from "../lib/common_utils";
 
 export const ConnectWidget = observer(function ConnectWidget() {
 	const store = usePhantasmaLink();
-	const [showPairing, setShowPairing] = useState(false);
 
 	if (store.connected && store.account) {
 		const address = store.account.address;
 		return (
 			<DropdownMenu>
 				<DropdownMenuTrigger asChild>
-					<Button variant="outline" className="gap-2">
-						<Wallet className="size-4" />
-						{str_cut(address)}
+					<Button variant="outline" className="gap-2 font-mono text-xs">
+						<Wallet className="size-4 shrink-0" />
+						{address}
 					</Button>
 				</DropdownMenuTrigger>
 				<DropdownMenuContent align="end">
@@ -49,14 +47,10 @@ export const ConnectWidget = observer(function ConnectWidget() {
 	}
 
 	const busy = store.status === "pairing" || store.status === "connecting";
-	const cancel = () => {
-		setShowPairing(false);
-		void store.cancel();
-	};
 	return (
 		<>
 			{busy ? (
-				<Button variant="outline" className="gap-2" onClick={cancel}>
+				<Button variant="outline" className="gap-2" onClick={() => void store.cancel()}>
 					<X className="size-4" />
 					Cancel
 				</Button>
@@ -65,17 +59,23 @@ export const ConnectWidget = observer(function ConnectWidget() {
 					variant="outline"
 					className="gap-2"
 					disabled={!store.client}
-					onClick={() => {
-						void store.connect();
-						setShowPairing(true);
-					}}
+					onClick={() => void store.connect()}
 				>
 					<Wallet className="size-4" />
 					Connect wallet
 				</Button>
 			)}
-			{showPairing && store.pairingUri ? (
-				<PairingModal uri={store.pairingUri} transport={store.transport} onClose={cancel} />
+			{/* The pairing QR belongs to the relay transport only - it is the single transport that
+			    enters the "pairing" state (waiting for the wallet to scan). Loopback and deeplink
+			    connect directly via connect(), so they must never render the QR. Gating on the
+			    store's own status (not a local flag) keeps a stale URI from leaking a QR after a
+			    transport switch. */}
+			{store.status === "pairing" && store.pairingUri ? (
+				<PairingModal
+					uri={store.pairingUri}
+					transport={store.transport}
+					onClose={() => void store.cancel()}
+				/>
 			) : null}
 		</>
 	);

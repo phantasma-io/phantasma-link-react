@@ -8,18 +8,16 @@ import {
 	PhantasmaLink5,
 	LinkEvent,
 	bytesToBase64,
-	base64ToBytes,
 	utf8ToBytes,
-	buildSignMessagePayload,
 	type DappMetadata,
 	type LinkAccountV5,
 	type WalletCapabilities,
 	type WalletInfo,
-	type SignMessageResult,
 	type SendTransactionParams,
 	type InvokeScriptParams,
 } from "phantasma-sdk-ts/link/v5";
-import { verifyData, bytesToHex } from "phantasma-sdk-ts/public";
+import { verifyV5Signature } from "./verify";
+import { errMsg } from "./common_utils";
 
 /** Which v5 transport the store drives.
  * - `loopback`: same-machine desktop flow (a plaintext WebSocket to the wallet's local server,
@@ -70,7 +68,6 @@ export class PhantasmaLinkStore {
 	capabilities: WalletCapabilities | undefined = undefined;
 	walletInfo: WalletInfo | undefined = undefined;
 	pairingUri: string | undefined = undefined;
-	error: string | undefined = undefined;
 	/** Label of the operation currently in flight (for per-button spinners), if any. */
 	busyOp: string | undefined = undefined;
 	logs: LinkLogEntry[] = [];
@@ -125,7 +122,6 @@ export class PhantasmaLinkStore {
 			this.capabilities = undefined;
 			this.walletInfo = undefined;
 			this.pairingUri = undefined;
-			this.error = undefined;
 		});
 
 		try {
@@ -154,7 +150,6 @@ export class PhantasmaLinkStore {
 		} catch (e) {
 			runInAction(() => {
 				this.status = "error";
-				this.error = errMsg(e);
 				this.log("error", "init", errMsg(e));
 			});
 		}
@@ -208,9 +203,6 @@ export class PhantasmaLinkStore {
 		if (!this.client) {
 			return;
 		}
-		runInAction(() => {
-			this.error = undefined;
-		});
 
 		if (this.transport === "relay") {
 			runInAction(() => {
@@ -226,7 +218,10 @@ export class PhantasmaLinkStore {
 		});
 		this.log("request", "connect");
 		try {
-			const result = await this.client.connect();
+			// Pass the dApp metadata explicitly: the loopback factory carries no default dApp
+			// (unlike webDeeplink/relayEcdh), and connect() requires it. Harmless for the other
+			// transports - it is the same value their factory already stored.
+			const result = await this.client.connect(this.dapp);
 			runInAction(() => {
 				this.account = result.account;
 				this.capabilities = result.capabilities;
@@ -237,7 +232,6 @@ export class PhantasmaLinkStore {
 		} catch (e) {
 			runInAction(() => {
 				this.status = this.account ? "connected" : "error";
-				this.error = errMsg(e);
 				this.log("error", "connect", errMsg(e));
 			});
 		}
@@ -275,7 +269,18 @@ export class PhantasmaLinkStore {
 	}
 
 	getWalletInfo() {
-		return this.run("getWalletInfo", () => this.client!.getWalletInfo(), (r) => `${r.name} v${r.version}`);
+		return this.run(
+			"getWalletInfo",
+			async () => {
+				const info = await this.client!.getWalletInfo();
+				// Keep the observable in sync so consumers can render the wallet name/version.
+				runInAction(() => {
+					this.walletInfo = info;
+				});
+				return info;
+			},
+			(r) => `${r.name} v${r.version}`,
+		);
 	}
 
 	getAccounts() {
@@ -286,9 +291,11 @@ export class PhantasmaLinkStore {
 		return this.run(
 			"signMessage",
 			async () => {
+				// No `display`: the wallet decodes the UTF-8 message for its consent preview, so
+				// passing the same text as a display hint would show it twice. `display` is for a
+				// human-friendly label that DIFFERS from the raw bytes (e.g. a binary message).
 				const result = await this.client!.signMessage({
 					message: bytesToBase64(utf8ToBytes(message)),
-					display: message,
 				});
 				const verified = verifyV5Signature(message, result, this.account?.address);
 				return { signature: result.signature, verified };
@@ -312,7 +319,6 @@ export class PhantasmaLinkStore {
 		}
 		runInAction(() => {
 			this.busyOp = label;
-			this.error = undefined;
 		});
 		this.log("request", label);
 		try {
@@ -325,7 +331,6 @@ export class PhantasmaLinkStore {
 		} catch (e) {
 			runInAction(() => {
 				this.busyOp = undefined;
-				this.error = errMsg(e);
 				this.log("error", label, errMsg(e));
 			});
 			return undefined;
@@ -335,34 +340,6 @@ export class PhantasmaLinkStore {
 	dispose(): void {
 		this.teardownClient();
 	}
-}
-
-/** Verify a v5 signMessage result against the signer's address; null if it cannot be checked.
- * The wallet signs DOMAIN_TAG || random || message (spec §8); verifyData wants the Phantasma
- * signature envelope `01<len><sig-hex>`. */
-function verifyV5Signature(
-	message: string,
-	result: SignMessageResult,
-	address?: string,
-): boolean | null {
-	if (!address) {
-		return null;
-	}
-	try {
-		const payload = buildSignMessagePayload(utf8ToBytes(message), base64ToBytes(result.random));
-		const sig = base64ToBytes(result.signature);
-		const phaSig = "01" + sig.length.toString(16).padStart(2, "0") + bytesToHex(sig);
-		return verifyData(bytesToHex(payload), phaSig, address);
-	} catch {
-		return null;
-	}
-}
-
-function errMsg(e: unknown): string {
-	if (e && typeof e === "object" && "message" in e) {
-		return String((e as { message: unknown }).message);
-	}
-	return String(e);
 }
 
 function summarize(data: unknown): string | undefined {
