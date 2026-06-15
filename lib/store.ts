@@ -15,6 +15,7 @@ import {
 	type WalletInfo,
 	type SendTransactionParams,
 	type InvokeScriptParams,
+	type UnmatchedResponse,
 } from "phantasma-sdk-ts/link/v5";
 import { verifyV5Signature } from "./verify";
 import { errMsg } from "./common_utils";
@@ -52,6 +53,92 @@ export interface PhantasmaLinkConfig {
 
 let logSeq = 0;
 const MAX_LOG = 200;
+
+/** localStorage key under which the store remembers the user's chosen transport across reloads.
+ * The deeplink flow navigates to the wallet and back, reloading the page (spec §19, same-device
+ * hop); without this the selector snaps back to the config default and shows "not connected"
+ * until the user re-picks the transport, even though the session is still live. */
+const TRANSPORT_STORAGE_KEY = "phantasma.link.v5.transport";
+
+function loadStoredTransport(): LinkTransportKind | undefined {
+	if (typeof window === "undefined") {
+		return undefined;
+	}
+	try {
+		const v = window.localStorage.getItem(TRANSPORT_STORAGE_KEY);
+		return v === "loopback" || v === "deeplink" || v === "relay" ? v : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function saveStoredTransport(kind: LinkTransportKind): void {
+	if (typeof window === "undefined") {
+		return;
+	}
+	try {
+		window.localStorage.setItem(TRANSPORT_STORAGE_KEY, kind);
+	} catch {
+		/* storage unavailable (private mode) - persistence is best-effort */
+	}
+}
+
+/** localStorage key for the single in-flight deeplink operation. Deeplink is strict ping-pong
+ * (you navigate to the wallet and back, so there is at most one outstanding op). It is persisted
+ * before the wallet hop so the op's result can still be presented if the page reloads while the
+ * wallet is open and the original request promise is lost. */
+const OUTSTANDING_OP_KEY = "phantasma.link.v5.outstandingOp";
+
+/** Drop a remembered op older than this; a never-answered op must not later mislabel an
+ * unrelated response delivered in a future session. */
+const OUTSTANDING_OP_TTL_MS = 10 * 60 * 1000;
+
+interface StoredOp {
+	label: string;
+	message?: string;
+	ts: number;
+}
+
+function loadOutstandingOp(): StoredOp | undefined {
+	if (typeof window === "undefined") {
+		return undefined;
+	}
+	try {
+		const raw = window.localStorage.getItem(OUTSTANDING_OP_KEY);
+		if (!raw) {
+			return undefined;
+		}
+		const parsed = JSON.parse(raw) as StoredOp;
+		if (typeof parsed?.label !== "string" || typeof parsed?.ts !== "number") {
+			return undefined;
+		}
+		return Date.now() - parsed.ts > OUTSTANDING_OP_TTL_MS ? undefined : parsed;
+	} catch {
+		return undefined;
+	}
+}
+
+function saveOutstandingOp(op: Omit<StoredOp, "ts">): void {
+	if (typeof window === "undefined") {
+		return;
+	}
+	try {
+		window.localStorage.setItem(OUTSTANDING_OP_KEY, JSON.stringify({ ...op, ts: Date.now() }));
+	} catch {
+		/* best-effort */
+	}
+}
+
+function clearOutstandingOp(): void {
+	if (typeof window === "undefined") {
+		return;
+	}
+	try {
+		window.localStorage.removeItem(OUTSTANDING_OP_KEY);
+	} catch {
+		/* best-effort */
+	}
+}
 
 export class PhantasmaLinkStore {
 	readonly dapp: DappMetadata;
@@ -103,6 +190,13 @@ export class PhantasmaLinkStore {
 
 	/** Build (or rebuild) the client for the current transport and restore any cached session. */
 	async init(): Promise<void> {
+		// Restore the transport the user last chose. The deeplink round-trip reloads the page, and
+		// without this the selector would reset to the config default and read "not connected" even
+		// though the deeplink client below hydrates a live session.
+		const stored = loadStoredTransport();
+		if (stored) {
+			this.transport = stored;
+		}
 		await this.buildClient();
 	}
 
@@ -111,6 +205,7 @@ export class PhantasmaLinkStore {
 			return;
 		}
 		this.transport = kind;
+		saveStoredTransport(kind);
 		await this.buildClient();
 	}
 
@@ -145,6 +240,13 @@ export class PhantasmaLinkStore {
 					this.log("info", "Restored session", client.account.address);
 				} else {
 					this.log("info", `Client ready (${this.transport})`);
+				}
+				// A deeplink op whose response arrived only after this page reloaded (the original
+				// request promise was lost with the old page) is delivered during the build above;
+				// surface it now that the session/account are restored so the verdict still lands.
+				const delivered = client.takeUnmatchedResponse?.();
+				if (delivered) {
+					this.surfaceDeliveredResult(delivered);
 				}
 			});
 		} catch (e) {
@@ -312,6 +414,7 @@ export class PhantasmaLinkStore {
 				return { signature: result.signature, verified };
 			},
 			(r) => `verified ${r.verified === null ? "n/a" : r.verified ? "VALID" : "INVALID"} | ${r.signature.slice(0, 16)}...`,
+			{ message },
 		);
 	}
 
@@ -323,7 +426,12 @@ export class PhantasmaLinkStore {
 		return this.run("invokeScript", () => this.client!.invokeScript(params), (r) => `${r.results.length} result(s)`);
 	}
 
-	private async run<T>(label: string, fn: () => Promise<T>, describe: (r: T) => string): Promise<T | undefined> {
+	private async run<T>(
+		label: string,
+		fn: () => Promise<T>,
+		describe: (r: T) => string,
+		context?: { message?: string },
+	): Promise<T | undefined> {
 		if (!this.client) {
 			this.log("error", label, "not connected");
 			return undefined;
@@ -331,21 +439,61 @@ export class PhantasmaLinkStore {
 		runInAction(() => {
 			this.busyOp = label;
 		});
+		// Deeplink navigates to the wallet and may reload this page; remember the op so its
+		// result can still be surfaced on return even if this promise dies (surfaceDeliveredResult).
+		if (this.transport === "deeplink") {
+			saveOutstandingOp({ label, message: context?.message });
+		}
 		this.log("request", label);
 		try {
 			const result = await fn();
 			runInAction(() => {
 				this.busyOp = undefined;
+				clearOutstandingOp();
 				this.log("result", label, describe(result));
 			});
 			return result;
 		} catch (e) {
 			runInAction(() => {
 				this.busyOp = undefined;
+				clearOutstandingOp();
 				this.log("error", label, errMsg(e));
 			});
 			return undefined;
 		}
+	}
+
+	/** Present a wallet response the SDK delivered with no in-flight request to match it - the
+	 * deeplink reload case. Looks up the op persisted before the wallet hop and logs its result
+	 * (recomputing the signature verdict for signMessage), then clears it. */
+	private surfaceDeliveredResult(response: UnmatchedResponse): void {
+		const op = loadOutstandingOp();
+		clearOutstandingOp();
+		if (!op) {
+			this.log("event", "late wallet response", summarize(response.result ?? response.error));
+			return;
+		}
+		if (!response.ok) {
+			const msg = (response.error as { message?: string } | undefined)?.message ?? "wallet error";
+			this.log("error", op.label, `(after reload) ${msg}`);
+			return;
+		}
+		if (op.label === "signMessage" && op.message) {
+			const result = response.result as { signature?: string };
+			const verified = verifyV5Signature(
+				op.message,
+				response.result as Parameters<typeof verifyV5Signature>[1],
+				this.account?.address,
+			);
+			const sig = result?.signature ? ` | ${result.signature.slice(0, 16)}...` : "";
+			this.log(
+				"result",
+				"signMessage",
+				`(after reload) verified ${verified === null ? "n/a" : verified ? "VALID" : "INVALID"}${sig}`,
+			);
+			return;
+		}
+		this.log("result", op.label, `(after reload) ${summarize(response.result) ?? "ok"}`);
 	}
 
 	dispose(): void {
