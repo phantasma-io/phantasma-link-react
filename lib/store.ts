@@ -358,19 +358,33 @@ export class PhantasmaLinkStore {
 	}
 
 	async disconnect(): Promise<void> {
-		if (this.client) {
-			try {
-				await this.client.disconnect();
-				this.log("result", "disconnect");
-			} catch (e) {
-				this.log("error", "disconnect", errMsg(e));
-			}
-		}
+		const client = this.client;
+		// Clear local state first so the UI reflects the disconnect immediately, independent of any
+		// transport round-trip.
 		runInAction(() => {
 			this.account = undefined;
 			this.capabilities = undefined;
 			this.status = "idle";
 		});
+		clearOutstandingOp();
+		if (!client) {
+			return;
+		}
+		if (this.transport === "deeplink") {
+			// Local-only: do NOT navigate to the wallet just to disconnect. A deeplink
+			// pha_disconnect would open the wallet and reload this page, and the persisted session
+			// would then resume on the next load ("stuck connected"). Drop it locally instead; the
+			// wallet's side lapses on its own session TTL.
+			client.forgetSession();
+			this.log("result", "disconnect");
+		} else {
+			try {
+				await client.disconnect();
+				this.log("result", "disconnect");
+			} catch (e) {
+				this.log("error", "disconnect", errMsg(e));
+			}
+		}
 	}
 
 	// ----- operations (each logs request/result/error and returns the result or undefined) -----
