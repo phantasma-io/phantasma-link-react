@@ -5,8 +5,9 @@
 
 "use client";
 
+import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
-import { X } from "lucide-react";
+import { Check, Copy, X } from "lucide-react";
 import { Button } from "./ui/button";
 import { clip_copy } from "../lib/common_utils";
 import type { LinkTransportKind } from "../lib/store";
@@ -18,6 +19,20 @@ export interface PairingModalProps {
 }
 
 export function PairingModal({ uri, transport, onClose }: PairingModalProps) {
+	// Briefly acknowledge the copy: the write to the clipboard always worked, it just gave no
+	// visible feedback. The effect clears the revert timer on unmount or when re-triggered.
+	const [copied, setCopied] = useState(false);
+	useEffect(() => {
+		if (!copied) return;
+		const id = window.setTimeout(() => setCopied(false), 1500);
+		return () => window.clearTimeout(id);
+	}, [copied]);
+
+	function handleCopyLink() {
+		clip_copy(uri);
+		setCopied(true);
+	}
+
 	return (
 		<div
 			className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
@@ -67,8 +82,9 @@ export function PairingModal({ uri, transport, onClose }: PairingModalProps) {
 							</Button>
 						</>
 					)}
-					<Button variant="outline" className="w-full" onClick={() => clip_copy(uri)}>
-						Copy pairing link
+					<Button variant="outline" className="w-full gap-2" onClick={handleCopyLink}>
+						{copied ? <Check className="size-4" /> : <Copy className="size-4" />}
+						{copied ? "Copied!" : "Copy pairing link"}
 					</Button>
 				</div>
 			</div>
