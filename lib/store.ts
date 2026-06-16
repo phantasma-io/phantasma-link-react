@@ -220,6 +220,18 @@ export class PhantasmaLinkStore {
 		});
 
 		try {
+			// A deeplink return arrives in the page-URL fragment on (re)load. Record whether THIS tab
+			// actually carries one, so "the return never reached this tab" is distinguishable from
+			// "it arrived but failed to decrypt/adopt" (the latter still logs Client ready, not
+			// Restored session). Permanent diagnostics for the deeplink same-device flow.
+			if (this.transport === "deeplink" && typeof window !== "undefined") {
+				const hasReturn = /[#&](plv=5|f=)/.test(window.location.hash);
+				this.log(
+					"info",
+					"deeplink-return",
+					hasReturn ? "response present in this tab URL" : "no response in this tab URL"
+				);
+			}
 			const client =
 				this.transport === "deeplink"
 					? await PhantasmaLink5.webDeeplink({ dapp: this.dapp, host: this.host })
