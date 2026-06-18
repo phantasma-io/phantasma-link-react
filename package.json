@@ -1,6 +1,6 @@
 {
   "name": "phantasma-link-react",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": false,
   "description": "React bindings and UI for the Phantasma Link dApp-wallet protocol (v5).",
   "author": "Phantasma Team",
@@ -18,11 +18,19 @@
     "tag": "latest"
   },
   "scripts": {
-    "build": "tsc && resolve-tspaths",
-    "test": "vitest run"
+    "build": "tsc && resolve-tspaths && tailwindcss -i ./theme.css -o ./dist/styles.css --minify",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./styles.css": "./dist/styles.css"
+  },
   "files": [
     "dist"
   ],
@@ -44,6 +52,7 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@tailwindcss/cli": "^4.3.0",
     "@tailwindcss/postcss": "^4.3.0",
     "@types/node": "^20.19.41",
     "@types/react": "^19.2.14",
