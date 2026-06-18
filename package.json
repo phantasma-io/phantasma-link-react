@@ -1,6 +1,6 @@
 {
   "name": "phantasma-link-react",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": false,
   "description": "React bindings and UI for the Phantasma Link dApp-wallet protocol (v5).",
   "author": "Phantasma Team",

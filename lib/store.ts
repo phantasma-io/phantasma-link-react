@@ -396,6 +396,11 @@ export class PhantasmaLinkStore {
 			} catch (e) {
 				this.log("error", "disconnect", errMsg(e));
 			}
+			// The relay channel pairs exactly ONCE - a second wallet key-hop on the same channel is
+			// dropped as noise/forgery - so a spent client can never re-pair. Rebuild a fresh client
+			// (new channel + pairing URI) so the next connect() can pair again instead of hanging
+			// silently on the dead channel. Loopback is rebuilt too: harmless and keeps it uniform.
+			await this.buildClient();
 		}
 	}
 
