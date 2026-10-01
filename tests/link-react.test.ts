@@ -63,3 +63,86 @@ describe("verifyV5Signature", () => {
 		expect(verifyV5Signature(message, result, undefined)).toBe(null);
 	});
 });
+
+// The store over the injected transport (spec section 6.1): a fake `window.phantasmaLink`
+// stands in for the wallet extension. These tests drive the store through its public API.
+
+import { afterEach } from "vitest";
+import { PhantasmaLinkStore } from "../lib/store";
+import { PLV, type PhantasmaLinkProvider } from "phantasma-sdk-ts/link/v5";
+
+const dapp = { name: "Test dApp", url: "https://dapp.example" };
+
+/** A provider that answers pha_connect with a session and every other method with chains. */
+function fakeProvider(): PhantasmaLinkProvider & { requests: string[] } {
+	const requests: string[] = [];
+	return {
+		plvVersions: [PLV],
+		requests,
+		async request(frame: string) {
+			requests.push(frame);
+			const { id, method } = JSON.parse(frame) as { id: string; method: string };
+			if (method === "pha_connect") {
+				return JSON.stringify({
+					plv: PLV,
+					id,
+					result: {
+						wallet: { name: "Aura", version: "0.1.0" },
+						capabilities: { plvVersions: [5], methods: [], chains: [], txFormats: [], signatureKinds: [] },
+						account: { address: "P2K..." },
+						session: { id: "sess-1" },
+					},
+				});
+			}
+			return JSON.stringify({
+				plv: PLV,
+				id,
+				result: { chains: ["phantasma:mainnet"], current: "phantasma:mainnet", nexus: "mainnet" },
+			});
+		},
+		onEvent() {
+			return () => {};
+		},
+	};
+}
+
+describe("PhantasmaLinkStore over the injected transport", () => {
+	const host = globalThis as { phantasmaLink?: unknown };
+	afterEach(() => {
+		delete host.phantasmaLink;
+	});
+
+	it("defaults to the injected transport when a wallet extension is on the page", () => {
+		host.phantasmaLink = fakeProvider();
+		expect(new PhantasmaLinkStore({ dapp }).transport).toBe("injected");
+	});
+
+	it("defaults to deeplink when no extension is on the page", () => {
+		expect(new PhantasmaLinkStore({ dapp }).transport).toBe("deeplink");
+	});
+
+	it("connects through the provider and exposes the account", async () => {
+		const provider = fakeProvider();
+		host.phantasmaLink = provider;
+		const store = new PhantasmaLinkStore({ dapp, transport: "injected" });
+		await store.init();
+		expect(store.status).toBe("idle");
+
+		await store.connect();
+		expect(store.connected).toBe(true);
+		expect(store.address).toBe("P2K...");
+		expect(store.walletInfo?.name).toBe("Aura");
+		expect(JSON.parse(provider.requests[0]).method).toBe("pha_connect");
+
+		const chains = await store.getChains();
+		expect(chains?.nexus).toBe("mainnet");
+		store.dispose();
+	});
+
+	it("reports a missing extension as an init error", async () => {
+		const store = new PhantasmaLinkStore({ dapp, transport: "injected" });
+		await store.init();
+		expect(store.status).toBe("error");
+		expect(store.logs[0]?.label).toBe("init");
+	});
+});

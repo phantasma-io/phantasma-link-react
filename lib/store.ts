@@ -8,6 +8,7 @@ import {
 	PhantasmaLink5,
 	LinkEvent,
 	bytesToBase64,
+	findInjectedProvider,
 	utf8ToBytes,
 	type DappMetadata,
 	type LinkAccountV5,
@@ -21,12 +22,14 @@ import { verifyV5Signature } from "./verify";
 import { errMsg } from "./common_utils";
 
 /** Which v5 transport the store drives.
+ * - `injected`: the browser-extension wallet's page provider `window.phantasmaLink` (spec
+ *   section 6.1). No pairing: connect() talks to the wallet directly.
  * - `loopback`: same-machine desktop flow (a plaintext WebSocket to the wallet's local server,
- *   localhost:7090/phantasma/v5). No pairing - connect() talks to the wallet directly.
+ *   localhost:7090/phantasma/v5). No pairing: connect() talks to the wallet directly.
  * - `deeplink`: same-device web flow (universal link opens the wallet on this device).
  * - `relay`: cross-device flow (the pairing URI is shown as a QR; the wallet scans it and
  *   the session arrives over the public relay). */
-export type LinkTransportKind = "loopback" | "deeplink" | "relay";
+export type LinkTransportKind = "injected" | "loopback" | "deeplink" | "relay";
 
 export type LinkStatus = "idle" | "pairing" | "connecting" | "connected" | "error";
 
@@ -43,7 +46,9 @@ export interface LinkLogEntry {
 export interface PhantasmaLinkConfig {
 	/** dApp identity shown in the wallet's approval UI and embedded in the pairing URI. */
 	dapp: DappMetadata;
-	/** Initial transport; defaults to `deeplink`. Switchable at runtime via setTransport(). */
+	/** Initial transport. Default: `injected` when a wallet extension is on the page, otherwise
+	 * `deeplink` (the selection order of spec section 3). Switchable at runtime via
+	 * setTransport(). */
 	transport?: LinkTransportKind;
 	/** Relay WebSocket URL for the `relay` transport; defaults to the public relay. */
 	relayUrl?: string;
@@ -66,7 +71,9 @@ function loadStoredTransport(): LinkTransportKind | undefined {
 	}
 	try {
 		const v = window.localStorage.getItem(TRANSPORT_STORAGE_KEY);
-		return v === "loopback" || v === "deeplink" || v === "relay" ? v : undefined;
+		return v === "injected" || v === "loopback" || v === "deeplink" || v === "relay"
+			? v
+			: undefined;
 	} catch {
 		return undefined;
 	}
@@ -163,7 +170,7 @@ export class PhantasmaLinkStore {
 
 	constructor(config: PhantasmaLinkConfig) {
 		this.dapp = config.dapp;
-		this.transport = config.transport ?? "deeplink";
+		this.transport = config.transport ?? (findInjectedProvider() ? "injected" : "deeplink");
 		this.relayUrl = config.relayUrl;
 		this.host = config.host;
 		makeAutoObservable(this, {}, { autoBind: true });
@@ -233,11 +240,13 @@ export class PhantasmaLinkStore {
 				);
 			}
 			const client =
-				this.transport === "deeplink"
-					? await PhantasmaLink5.webDeeplink({ dapp: this.dapp, host: this.host })
-					: this.transport === "loopback"
-						? PhantasmaLink5.loopback()
-						: PhantasmaLink5.relayEcdh({ dapp: this.dapp, url: this.relayUrl });
+				this.transport === "injected"
+					? PhantasmaLink5.injected()
+					: this.transport === "deeplink"
+						? await PhantasmaLink5.webDeeplink({ dapp: this.dapp, host: this.host })
+						: this.transport === "loopback"
+							? PhantasmaLink5.loopback()
+							: PhantasmaLink5.relayEcdh({ dapp: this.dapp, url: this.relayUrl });
 
 			const unsub = client.onEvent((event, data) => this.onLinkEvent(event, data));
 			runInAction(() => {
@@ -309,7 +318,9 @@ export class PhantasmaLinkStore {
 	 * - `relay`: surfaces the pairing QR and waits for the wallet to scan it (the session
 	 *   arrives as an unsolicited SessionEstablished event - do NOT call pha_connect first,
 	 *   the channel key is not established until the wallet's hop arrives).
-	 * - `deeplink`: runs pha_connect, which resumes a stored session or opens the wallet. */
+	 * - `deeplink`: runs pha_connect, which resumes a stored session or opens the wallet.
+	 * - `injected` and `loopback`: run pha_connect directly; the wallet is reachable without
+	 *   pairing and prompts the user in its own UI. */
 	async connect(): Promise<void> {
 		if (!this.client) {
 			await this.buildClient();
@@ -343,9 +354,9 @@ export class PhantasmaLinkStore {
 		});
 		this.log("request", "connect");
 		try {
-			// Pass the dApp metadata explicitly: the loopback factory carries no default dApp
-			// (unlike webDeeplink/relayEcdh), and connect() requires it. Harmless for the other
-			// transports - it is the same value their factory already stored.
+			// Pass the dApp metadata explicitly: the loopback and injected factories carry no
+			// default dApp (unlike webDeeplink/relayEcdh), and connect() requires it. Harmless for
+			// the other transports - it is the same value their factory already stored.
 			const result = await this.client.connect(this.dapp);
 			runInAction(() => {
 				this.account = result.account;
@@ -399,7 +410,8 @@ export class PhantasmaLinkStore {
 			// The relay channel pairs exactly ONCE - a second wallet key-hop on the same channel is
 			// dropped as noise/forgery - so a spent client can never re-pair. Rebuild a fresh client
 			// (new channel + pairing URI) so the next connect() can pair again instead of hanging
-			// silently on the dead channel. Loopback is rebuilt too: harmless and keeps it uniform.
+			// silently on the dead channel. Loopback and injected are rebuilt too: harmless and
+			// keeps it uniform.
 			await this.buildClient();
 		}
 	}

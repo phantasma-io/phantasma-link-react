@@ -42,6 +42,9 @@ export function App() {
 
 ## Transports
 
+- **`injected`** (browser extension): the wallet extension defines `window.phantasmaLink` on
+  the page (spec section 6.1). No pairing; the wallet prompts in its own UI. The store picks
+  it by default when the provider is present.
 - **`deeplink`** (same device): the pairing URI is a domain-verified universal link that opens
   the wallet on this device. Best when the dApp runs on the phone that holds the wallet.
 - **`relay`** (cross device): the pairing URI is rendered as a QR; the wallet on another device
