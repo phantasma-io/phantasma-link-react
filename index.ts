@@ -1,4 +1,4 @@
-// @phantasma/link-react - React bindings + UI for the Phantasma Link v5 dApp<->wallet protocol.
+// phantasma-link-react - React bindings + UI for the Phantasma Link v5 dApp<->wallet protocol.
 // Wrap your app in <PhantasmaLinkProvider config={{ dapp }}>, drop a <ConnectWidget /> in the
 // header, and read the live session via usePhantasmaLink() (in an `observer` component). The
 // store exposes the typed pha_* operations directly.

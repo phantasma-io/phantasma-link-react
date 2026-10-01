@@ -1,4 +1,4 @@
-# @phantasma/link-react
+# phantasma-link-react
 
 React bindings and UI for the [Phantasma Link](https://github.com/phantasma-io) v5
 dApp&harr;wallet protocol. Wrap your app once, drop in a connect button, and call the typed
@@ -11,20 +11,15 @@ QR/link and the account menu. There is no protocol logic here that the SDK does 
 ## Install
 
 ```sh
-npm install @phantasma/link-react
+npm install phantasma-link-react
 ```
 
 Peer dependencies: `react` and `react-dom` (>=18).
 
-> **Local SDK during development.** Phantasma Link v5 is not yet published to npm, so this
-> package currently depends on the SDK via `file:../phantasma-sdk-ts` (a sibling checkout of
-> `phantasma-io/phantasma-sdk-ts`). Once the SDK ships v5 to npm, the dependency flips to a
-> version range.
-
 ## Quick start
 
 ```tsx
-import { PhantasmaLinkProvider, ConnectWidget } from "@phantasma/link-react";
+import { PhantasmaLinkProvider, ConnectWidget } from "phantasma-link-react";
 
 const dapp = { name: "My dApp", url: "https://mydapp.example" };
 
@@ -59,7 +54,7 @@ Switch at runtime with `store.setTransport("relay")`.
 
 ```tsx
 import { observer } from "mobx-react";
-import { usePhantasmaLink } from "@phantasma/link-react";
+import { usePhantasmaLink } from "phantasma-link-react";
 
 export const Demo = observer(function Demo() {
   const link = usePhantasmaLink();
